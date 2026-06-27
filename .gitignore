@@ -1,0 +1,22 @@
+# 运行时生成的目录（缓存、历史、下载图片）
+cache/
+history/
+pics/
+
+# 临时文件
+/tmp/
+*.tmp
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# 系统文件
+Thumbs.db
+.DS_Store
+Desktop.ini

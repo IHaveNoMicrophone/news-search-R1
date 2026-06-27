@@ -1,0 +1,34 @@
+# News Search 用户配置文件
+# 修改此文件来定制新闻搜索的默认行为。
+# 运行时用户参数 > 此文件 > 硬编码默认值
+
+# ── 默认值 ──────────────────────────────────────────────────────
+defaults:
+  source_scope: all           # domestic | international | all
+  count_per_category: 3       # 每类默认条数
+  output_format: markdown     # markdown | json
+  include_images: true        # 是否下载配图
+  max_total_items: 12         # 最终输出上限
+
+# ── 偏好设置 ────────────────────────────────────────────────────
+preferences:
+  # preferred_sources: []     # 优先使用的来源（空=全部），如 ["bilibili", "thepaper.cn"]
+  # blocked_keywords:         # 排除含这些关键词的内容
+  #   - 广告
+  #   - 软文
+  # favorite_topics:          # 偏好话题，匹配的条目 +5 分
+  #   - 科技
+  #   - 国际
+
+# ── 评分权重 ────────────────────────────────────────────────────
+scoring:
+  bilibili_weight: 40         # bilibili 目标占比（百分比）
+  traditional_weight: 60      # 传统媒体 + 热搜目标占比
+  dedup_threshold: 0.4        # 去重相似度阈值（0-1）
+
+# ── 高级设置 ────────────────────────────────────────────────────
+advanced:
+  cache_ttl_seconds: 300      # 默认缓存时间（秒）
+  request_delay_ms: 500       # 同源请求间隔（毫秒）
+  cache_refresh: false        # 设为 true 每次强制刷新缓存
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
