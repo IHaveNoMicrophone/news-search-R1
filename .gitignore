@@ -3,6 +3,9 @@ cache/
 history/
 pics/
 
+# 备份文件
+*.bak
+
 # 临时文件
 /tmp/
 *.tmp

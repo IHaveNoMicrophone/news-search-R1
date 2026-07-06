@@ -24,7 +24,22 @@ description: >-
 | 话题分类关键词库 | `references/topics.md` |
 | 用户默认偏好 | `config.yaml` |
 
-## 工作流程（核心 7 步）
+## 工作流程（核心 8 步）
+
+### 0. 环境自检（每次运行前执行）
+
+**bilibili MCP 检测与自动安装：**
+
+1. 尝试调用 `mcp__bilibili-mcp__check_bilibili_credentials` 或搜索 `mcp__bilibili-mcp__` 前缀工具检测 MCP 是否可用
+2. **不可用时自动安装**：
+   ```bash
+   bash scripts/setup_bilibili_mcp.sh
+   ```
+3. 安装后提示用户：**需要重启 Claude Code** 以加载新的 MCP 服务器
+4. **回退策略**（当前会话不可用时）：
+   - Bilibili 搜索回退为 WebSearch `site:bilibili.com` + curl API
+   - MCP 字幕/评论增强功能静默跳过
+   - 评分中去掉 MCP 加分项（-3 字幕分, -2 评论分）
 
 ### 1. 解析意图 + 时间感知 + 合并配置
 - 提取 `source_scope`（domestic/international/all）、`count`、`output_format`
@@ -40,7 +55,7 @@ description: >-
 
 | 阶段 | 数据源 | 工具 | 缓存 Key |
 |------|--------|------|----------|
-| A | Bilibili 时政新闻搜索 | WebSearch | `bilibili_news_<scope>` |
+| A | Bilibili 时政新闻搜索 | **MCP `bilibili-search`** (优先) / WebSearch (回退) | `bilibili_news_<scope>` |
 | B | Bilibili 热搜 | Bash curl | `bilibili_trending` |
 | C | 微博热搜（带降级） | `bash scripts/fetch_weibo.sh` | `weibo_hot` |
 | D | 传统媒体搜索 | WebSearch | `traditional_<scope>` |
@@ -66,7 +81,10 @@ description: >-
 ### 4. 并行获取内容详情
 - Bilibili：curl API 获取 desc、duration、pic
 - 传统媒体：curl 抓取 HTML → 提取 og:image、标题、时间、摘要
-- **MCP bilibili 增强**（可选）：排名前 3 视频尝试获取字幕 + 热门评论，不可用则静默跳过
+- **MCP bilibili 增强**（可选）：排名前 3 视频尝试通过 `@xzxzzx/bilibili-mcp` 获取字幕 + 热门评论
+  - 工具：`get_video_transcript`, `get_video_comments`, `get_video_metadata`
+  - Cookie 配置：`npx -y @xzxzzx/bilibili-mcp@latest config`（字幕/评论功能需要）
+  - 未配置 Cookie 时仅 metadata 可用，字幕/评论静默跳过
 - 配图优先：bilibili pic > og:image > twitter:image，无图则跳过，目标配图率 ≥ 60%
 
 ### 5. 下载配图
@@ -97,6 +115,7 @@ echo '<results_json>' | python tools/history.py save
 | `tools/dedup.py` | 跨来源新闻去重合并 |
 | `tools/classify.py` | 话题分类标注 |
 | `tools/history.py` | 历史管理（save/get/diff/trending） |
+| `scripts/setup_bilibili_mcp.sh` | bilibili MCP 自动安装与配置（环境自检用） |
 | `scripts/fetch_weibo.sh` | 微博热搜获取（三级降级链） |
 | `scripts/download_image.sh` | 图片下载（重试+验证） |
 | `scripts/fetch_rss.sh` | RSS 源补充（可选） |

@@ -20,6 +20,13 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Any
 
+# Windows GBK 编码兼容：强制 stdin/stdout 使用 UTF-8
+# Git Bash 输出 UTF-8，但 Windows Python 默认用 GBK 解码 stdin，导致 surrogate 字符
+if sys.platform == "win32":
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+
 HISTORY_DIR = Path(__file__).resolve().parent.parent / "history"
 
 # ── 辅助函数 ──────────────────────────────────────────────────────

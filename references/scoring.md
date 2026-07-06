@@ -51,7 +51,7 @@ HeatScore = BilibiliSignal(0-45) + CrossPlatformSignal(0-40) + NewsMatchSignal(0
 | 视频有可访问字幕 | +3 |
 | 热门评论 > 10 条 | +2 |
 
-MCP 工具不可用时静默跳过。
+MCP 工具不可用或未配置 Bilibili Cookie 时静默跳过（Cookie 配置：`npx -y @xzxzzx/bilibili-mcp@latest config`）。
 
 ---
 

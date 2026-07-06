@@ -16,6 +16,10 @@ TIMEOUT=10
 UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
 OUTPUT_FORMAT="${1:---json}"
 
+# 避免并发冲突：使用 mktemp 替代硬编码路径
+TMPFILE=$(mktemp /tmp/news_search_weibo_XXXXXX.json)
+trap 'rm -f "$TMPFILE"' EXIT
+
 # ── 辅助函数 ──────────────────────────────────────────────────────
 
 log() {
@@ -30,22 +34,22 @@ try_api() {
     local http_code
     http_code=$(curl -s --connect-timeout "$TIMEOUT" --max-time "$TIMEOUT" \
         -H "User-Agent: $UA" \
-        -w "%{http_code}" -o /tmp/news_search_weibo_resp.json \
+        -w "%{http_code}" -o "$TMPFILE" \
         "$url" 2>/dev/null || echo "000")
 
     if [ "$http_code" = "200" ]; then
         local size
-        size=$(wc -c < /tmp/news_search_weibo_resp.json 2>/dev/null || echo 0)
+        size=$(wc -c < "$TMPFILE" 2>/dev/null || echo 0)
         if [ "$size" -gt 100 ]; then
             log "✓ $name 成功 ($size bytes)"
-            cat /tmp/news_search_weibo_resp.json
-            rm -f /tmp/news_search_weibo_resp.json
+            cat "$TMPFILE"
+            rm -f "$TMPFILE"
             return 0
         fi
     fi
 
     log "✗ $name 失败 (HTTP $http_code)"
-    rm -f /tmp/news_search_weibo_resp.json
+    rm -f "$TMPFILE"
     return 1
 }
 

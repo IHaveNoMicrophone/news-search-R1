@@ -1,0 +1,7 @@
+{
+  "enabledMcpjsonServers": [
+    "github",
+    "context7",
+    "bilibili-mcp"
+  ]
+}

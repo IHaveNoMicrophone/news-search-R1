@@ -91,7 +91,7 @@ if [ "$FILE_SIZE" -eq 0 ]; then
 fi
 
 if [ "$FILE_SIZE" -gt "$MAX_SIZE_BYTES" ]; then
-    FILE_SIZE_MB=$(echo "scale=1; $FILE_SIZE / 1048576" | bc 2>/dev/null || echo "?")
+    FILE_SIZE_MB=$(( (FILE_SIZE + 524288) / 1048576 ))  # 四舍五入到整数 MB，替代 bc
     echo "[失败] 文件过大 (${FILE_SIZE_MB}MB > ${MAX_SIZE_MB}MB 上限)" >&2
     rm -f "$SAVE_PATH"
     exit 1
@@ -122,8 +122,8 @@ fi
 # ── 成功 ──────────────────────────────────────────────────────────
 END_TIME=$(date +%s)
 ELAPSED=$((END_TIME - START_TIME))
-FILE_SIZE_KB=$(echo "scale=1; $FILE_SIZE / 1024" | bc 2>/dev/null || echo "?")
+FILE_SIZE_KB=$(( (FILE_SIZE + 512) / 1024 ))  # 四舍五入到整数 KB，替代 bc
 
-echo "[成功] 已保存 (${FILE_SIZE_KB} KB): $SAVE_PATH"
+echo "[成功] 已保存 (${FILE_SIZE_KB}K): $SAVE_PATH"
 echo "[完成] 耗时 ${ELAPSED}s"
 exit 0

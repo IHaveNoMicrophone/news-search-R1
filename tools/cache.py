@@ -25,6 +25,13 @@ import time
 import hashlib
 from pathlib import Path
 
+# Windows GBK 编码兼容：强制 stdin/stdout 使用 UTF-8
+# Git Bash 输出 UTF-8，但 Windows Python 默认用 GBK 解码 stdin，导致 surrogate 字符
+if sys.platform == "win32":
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+
 # 缓存目录：优先环境变量，其次脚本相对路径
 def _get_cache_dir() -> Path:
     env_dir = os.environ.get("NEWS_SEARCH_CACHE_DIR", "")
@@ -152,8 +159,8 @@ def cmd_list() -> None:
     print(f"{'状态':<6} {'剩余TTL':<10} {'已过':<8} {'Key'}")
     print("-" * 60)
     for e in entries:
-        status = "✅ 新鲜" if e["fresh"] else "❌ 过期"
-        print(f"{status:<6} {e['remaining']}s{'':<5} {e['age']}s{'':<4} {e['key'][:50]}")
+        status = "[OK] 新鲜" if e["fresh"] else "[EX] 过期"
+        print(f"{status:<10} {e['remaining']}s{'':<5} {e['age']}s{'':<4} {e['key'][:50]}")
 
 
 def main() -> None:

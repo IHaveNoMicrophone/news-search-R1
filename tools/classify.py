@@ -16,6 +16,13 @@ import re
 from pathlib import Path
 from typing import Any
 
+# Windows GBK 编码兼容：强制 stdin/stdout 使用 UTF-8
+# Git Bash 输出 UTF-8，但 Windows Python 默认用 GBK 解码 stdin，导致 surrogate 字符
+if sys.platform == "win32":
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+
 # ── 话题分类关键词库（与 references/topics.md 同步） ────────────────
 
 TOPIC_KEYWORDS: dict[str, list[str]] = {
@@ -103,28 +110,31 @@ def apply_favorite_boost(item: dict, favorites: list[str]) -> dict:
 
 
 def load_favorites() -> list[str]:
-    """从 config.yaml 读取 favorite_topics"""
+    """从 config.yaml 读取 favorite_topics（缩进感知的健壮解析）"""
     config_path = Path(__file__).resolve().parent.parent / "config.yaml"
     if not config_path.exists():
         return []
 
     try:
         content = config_path.read_text(encoding="utf-8")
-        # 简单 YAML 解析：找 favorite_topics 下的列表项
         in_fav = False
+        fav_indent = 0
         favorites: list[str] = []
         for line in content.split("\n"):
             stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
             if stripped.startswith("favorite_topics:"):
                 in_fav = True
+                fav_indent = len(line) - len(line.lstrip())
                 continue
             if in_fav:
-                if stripped.startswith("#"):
-                    continue
+                current_indent = len(line) - len(line.lstrip())
+                # 回到上层缩进（非列表项且缩进 <= 目标缩进）→ 退出
+                if stripped.endswith(":") and not stripped.startswith("- ") and current_indent <= fav_indent:
+                    break
                 if stripped.startswith("- "):
                     favorites.append(stripped[2:].strip().strip('"').strip("'"))
-                elif stripped and not stripped.startswith(" ") and not stripped.startswith("-"):
-                    break
         return favorites
     except OSError:
         return []

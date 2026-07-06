@@ -13,6 +13,13 @@ import json
 import re
 from typing import Any
 
+# Windows GBK 编码兼容：强制 stdin/stdout 使用 UTF-8
+# Git Bash 输出 UTF-8，但 Windows Python 默认用 GBK 解码 stdin，导致 surrogate 字符
+if sys.platform == "win32":
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+
 # ── 中文常用停用词表 ──────────────────────────────────────────────
 STOPWORDS: set[str] = {
     # 结构词
@@ -204,6 +211,10 @@ def deduplicate(items: list[dict], threshold: float = 0.4) -> list[dict]:
 
 def main() -> None:
     """CLI 入口：从 stdin 读取 JSON 数组，输出去重后的 JSON 数组"""
+    if sys.version_info < (3, 8):
+        print(f"[dedup] 错误: 需要 Python >= 3.8，当前 {sys.version}", file=sys.stderr)
+        sys.exit(1)
+
     try:
         raw = sys.stdin.read()
         items = json.loads(raw)

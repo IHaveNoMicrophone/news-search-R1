@@ -4,8 +4,13 @@
 #
 # 从 RSS/Atom feed 获取最新条目，解析为 JSON 输出到 stdout。
 # 零外部依赖（仅 curl + sed + grep），兼容 RSS 2.0 和 Atom 格式。
+#
+# v2 修复:
+#   - 移除 set -e（pipefail + grep -oP 在空 feed 时不触发退出）
+#   - 修复 subshell count 变量 bug（pipe while read 导致 JSON 缺逗号）
+#   - 改用临时文件 + while read < file 避免 subshell
 
-set -euo pipefail
+set -uo pipefail
 
 # ── 参数 ──────────────────────────────────────────────────────────
 if [ $# -lt 1 ]; then
@@ -18,7 +23,8 @@ RSS_URL="$1"
 MAX_ITEMS="${2:-5}"
 TIMEOUT=10
 TMPFILE=$(mktemp /tmp/news_search_rss_XXXXXX)
-trap 'rm -f "$TMPFILE"' EXIT
+ENTRIES_FILE=$(mktemp /tmp/news_search_rss_entries_XXXXXX)
+trap 'rm -f "$TMPFILE" "$ENTRIES_FILE"' EXIT
 
 UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
 
@@ -39,11 +45,6 @@ if [ "$HTTP_CODE" != "200" ]; then
 fi
 
 # ── 解析 XML → JSON ──────────────────────────────────────────────
-# 不依赖 xmllint/xmlstarlet/jq，用纯 shell 解析
-#
-# 策略：提取所有 <item> 块（RSS）或 <entry> 块（Atom），
-# 从每个块中提取 title, link, description, pubDate/published
-
 FEED_CONTENT=$(cat "$TMPFILE")
 
 # 判断格式
@@ -52,73 +53,76 @@ if echo "$FEED_CONTENT" | grep -q "<entry>"; then
     IS_ATOM=true
 fi
 
-# ── 提取条目 ──────────────────────────────────────────────────────
-output_json() {
-    local count=0
-    echo "["
+# ── 安全 grep 包装（避免 pipefail 导致空结果触发 exit） ──────────
+safe_grep() {
+    grep -oP "$@" 2>/dev/null || true
+}
+
+# ── 提取条目到临时文件（避免 pipe while read 的 subshell bug） ───
+if $IS_ATOM; then
+    echo "$FEED_CONTENT" | tr '\n' ' ' | safe_grep '<entry>.*?</entry>' | head -n "$MAX_ITEMS" > "$ENTRIES_FILE"
+else
+    echo "$FEED_CONTENT" | tr '\n' ' ' | safe_grep '<item>.*?</item>' | head -n "$MAX_ITEMS" > "$ENTRIES_FILE"
+fi
+
+# ── 输出 JSON 数组 ───────────────────────────────────────────────
+echo "["
+count=0
+first=true
+
+while IFS= read -r entry; do
+    [ -z "$entry" ] && continue
+
+    if $first; then
+        first=false
+    else
+        echo ","
+    fi
 
     if $IS_ATOM; then
         # Atom 格式解析
-        # 将 feed 按 <entry> 分割
-        echo "$FEED_CONTENT" | tr '\n' ' ' | grep -oP '<entry>.*?</entry>' | head -n "$MAX_ITEMS" | while IFS= read -r entry; do
-            if [ $count -gt 0 ]; then
-                echo ","
-            fi
+        title=$(echo "$entry" | grep -oP '<title[^>]*>\K[^<]+' | head -1 | sed 's/"/\\"/g')
+        link=$(echo "$entry" | grep -oP '<link[^>]*href="\K[^"]+' | head -1 | sed 's/"/\\"/g')
+        [ -z "$link" ] && link=$(echo "$entry" | grep -oP '<link[^>]*>\K[^<]+' | head -1 | sed 's/"/\\"/g')
+        summary=$(echo "$entry" | grep -oP '<summary[^>]*>\K[^<]+' | head -1 | sed 's/"/\\"/g; s/&lt;/</g; s/&gt;/>/g; s/&amp;/\\&/g')
+        [ -z "$summary" ] && summary=$(echo "$entry" | grep -oP '<content[^>]*>\K[^<]+' | head -1 | sed 's/"/\\"/g')
+        pubdate=$(echo "$entry" | grep -oP '<published[^>]*>\K[^<]+' | head -1 | sed 's/"/\\"/g')
+        [ -z "$pubdate" ] && pubdate=$(echo "$entry" | grep -oP '<updated[^>]*>\K[^<]+' | head -1 | sed 's/"/\\"/g')
 
-            # 提取各字段
-            title=$(echo "$entry" | grep -oP '<title[^>]*>\K[^<]+' | head -1 | sed 's/"/\\"/g')
-            link=$(echo "$entry" | grep -oP '<link[^>]*href="\K[^"]+' | head -1 | sed 's/"/\\"/g')
-            [ -z "$link" ] && link=$(echo "$entry" | grep -oP '<link[^>]*>\K[^<]+' | head -1 | sed 's/"/\\"/g')
-            summary=$(echo "$entry" | grep -oP '<summary[^>]*>\K[^<]+' | head -1 | sed 's/"/\\"/g; s/&lt;/</g; s/&gt;/>/g; s/&amp;/\\&/g')
-            [ -z "$summary" ] && summary=$(echo "$entry" | grep -oP '<content[^>]*>\K[^<]+' | head -1 | sed 's/"/\\"/g')
-            pubdate=$(echo "$entry" | grep -oP '<published[^>]*>\K[^<]+' | head -1 | sed 's/"/\\"/g')
-            [ -z "$pubdate" ] && pubdate=$(echo "$entry" | grep -oP '<updated[^>]*>\K[^<]+' | head -1 | sed 's/"/\\"/g')
+        # 截断过长摘要
+        if [ "${#summary}" -gt 200 ]; then
+            summary="${summary:0:200}..."
+        fi
 
-            # 截断过长摘要
-            if [ ${#summary} -gt 200 ]; then
-                summary="${summary:0:200}..."
-            fi
-
-            printf '  {"title": "%s", "url": "%s", "source_type": "traditional", "source_name": "rss", "summary": "%s", "pubdate": "%s", "image_url": null}' \
-                "$title" "$link" "$summary" "$pubdate"
-
-            count=$((count + 1))
-        done
+        printf '  {"title": "%s", "url": "%s", "source_type": "traditional", "source_name": "rss", "summary": "%s", "pubdate": "%s", "image_url": null}' \
+            "$title" "$link" "$summary" "$pubdate"
     else
         # RSS 2.0 格式解析
-        echo "$FEED_CONTENT" | tr '\n' ' ' | grep -oP '<item>.*?</item>' | head -n "$MAX_ITEMS" | while IFS= read -r item; do
-            if [ $count -gt 0 ]; then
-                echo ","
-            fi
+        title=$(echo "$entry" | grep -oP '<title>\K[^<]+' | head -1 | sed 's/"/\\"/g; s/<!\[CDATA\[//g; s/\]\]>//g')
+        link=$(echo "$entry" | grep -oP '<link>\K[^<]+' | head -1 | sed 's/"/\\"/g')
+        desc=$(echo "$entry" | grep -oP '<description>\K[^<]+' | head -1 | sed 's/"/\\"/g; s/<!\[CDATA\[//g; s/\]\]>//g; s/&lt;/</g; s/&gt;/>/g; s/&amp;/\\&/g')
+        pubdate=$(echo "$entry" | grep -oP '<pubDate>\K[^<]+' | head -1 | sed 's/"/\\"/g')
 
-            title=$(echo "$item" | grep -oP '<title>\K[^<]+' | head -1 | sed 's/"/\\"/g; s/<!\[CDATA\[//g; s/\]\]>//g')
-            link=$(echo "$item" | grep -oP '<link>\K[^<]+' | head -1 | sed 's/"/\\"/g')
-            desc=$(echo "$item" | grep -oP '<description>\K[^<]+' | head -1 | sed 's/"/\\"/g; s/<!\[CDATA\[//g; s/\]\]>//g; s/&lt;/</g; s/&gt;/>/g; s/&amp;/\\&/g')
-            pubdate=$(echo "$item" | grep -oP '<pubDate>\K[^<]+' | head -1 | sed 's/"/\\"/g')
+        # 从 description 中提取 og:image（如果有）
+        img=$(echo "$desc" | grep -oP '<img[^>]+src="\K[^"]+' | head -1 | sed 's/"/\\"/g' || echo "")
+        img_field="null"
+        [ -n "$img" ] && img_field="\"$img\""
 
-            # 从 description 中提取 og:image（如果有）
-            img=$(echo "$desc" | grep -oP '<img[^>]+src="\K[^"]+' | head -1 | sed 's/"/\\"/g' || echo "")
-            img_field="null"
-            [ -n "$img" ] && img_field="\"$img\""
+        # 去 HTML 标签，截断
+        clean_desc=$(echo "$desc" | sed 's/<[^>]*>//g')
+        if [ "${#clean_desc}" -gt 200 ]; then
+            clean_desc="${clean_desc:0:200}..."
+        fi
 
-            # 去 HTML 标签，截断
-            clean_desc=$(echo "$desc" | sed 's/<[^>]*>//g')
-            if [ ${#clean_desc} -gt 200 ]; then
-                clean_desc="${clean_desc:0:200}..."
-            fi
-
-            printf '  {"title": "%s", "url": "%s", "source_type": "traditional", "source_name": "rss", "summary": "%s", "pubdate": "%s", "image_url": %s}' \
-                "$title" "$link" "$clean_desc" "$pubdate" "$img_field"
-
-            count=$((count + 1))
-        done
+        printf '  {"title": "%s", "url": "%s", "source_type": "traditional", "source_name": "rss", "summary": "%s", "pubdate": "%s", "image_url": %s}' \
+            "$title" "$link" "$clean_desc" "$pubdate" "$img_field"
     fi
 
-    echo ""
-    echo "]"
-}
+    count=$((count + 1))
+done < "$ENTRIES_FILE"
 
-output_json
+echo ""
+echo "]"
 
-log "完成: 已获取最多 $MAX_ITEMS 条"
+log "完成: 已获取 $count 条"
 exit 0

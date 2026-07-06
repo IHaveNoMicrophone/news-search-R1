@@ -146,11 +146,14 @@ curl -s --connect-timeout 10 "https://api.bilibili.com/x/web-interface/view?bvid
 
 ### MCP bilibili 增强（可选）
 
-对排名前 3 的 bilibili 视频，尝试使用 MCP bilibili-mcp 工具：
-- `get_video_transcript(bvid)` → 提取 2-3 句关键内容作为"视频要点"
-- `get_video_comments(bvid, detail_level="brief")` → 提取时间戳评论定位关键片段
+对排名前 3 的 bilibili 视频，尝试使用 `@xzxzzx/bilibili-mcp` MCP 工具：
+- `get_video_transcript(bvid_or_url, preferred_lang="zh-Hans")` → 提取 2-3 句关键内容作为"视频要点"
+- `get_video_comments(bvid_or_url, detail_level="brief")` → 提取时间戳评论定位关键片段
+- `get_video_metadata(bvid_or_url)` → 验证视频播放量等元数据
+- `check_bilibili_credentials` → 检查 Cookie 凭证状态
 
-MCP 工具不可用时静默跳过，不影响主流程。
+注意：字幕和评论功能需要 Bilibili Cookie（配置：`npx -y @xzxzzx/bilibili-mcp@latest config`）。
+未配置时仅 metadata 工具可用，字幕/评论功能静默跳过，不影响主流程。
 
 ### 传统新闻
 
